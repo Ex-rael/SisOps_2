@@ -12,31 +12,7 @@ import VirtualMachine.VM;
 
 import java.util.Arrays;
 
-
 public class ProcessManager {
-
-    public class PCB {
-        public int id;
-        public int[] pages;
-        public int programCounter;
-
-        public int[] registers;
-
-        public PCB() {
-            id = pcbId;
-            pcbId++;
-            pages = new int[0];
-            programCounter = 0;
-            registers = new int[10];
-        }
-
-        @Override
-        public String toString(){
-            return "ID: " +this.id +" | PÁGINAS: " +Arrays.toString(this.pages)+" | PC: " +this.programCounter;
-        }
-
-    }
-
     private int pcbId;
     public CPU cpu;
     private MemoryManager memoryManager;
@@ -55,6 +31,30 @@ public class ProcessManager {
         cpu.setManagers(memoryManager,this, os);
     }
 
+    public class PCB {
+        public int id;
+        public int[] pages;
+        public int programCounter;
+        public int[] registers;
+        public Word[] program;  // Adicionado: referência ao programa original
+        public int programSize; // Adicionado: tamanho do programa em palavras
+
+        public PCB() {
+            id = pcbId;
+            pcbId++;
+            pages = new int[0];
+            programCounter = 0;
+            registers = new int[10];
+            program = null;
+            programSize = 0;
+        }
+
+        @Override
+        public String toString(){
+            return "ID: " +this.id +" | PÁGINAS: " +Arrays.toString(this.pages)+" | PC: " +this.programCounter;
+        }
+    }
+
     public ReturnCode create(Word[] program) {
 
         if (program.length > memoryManager.memSize) return ReturnCode.PROC_NO_MEMORY;
@@ -62,7 +62,7 @@ public class ProcessManager {
         int[] allocation = memoryManager.allocate(program.length);
         if (allocation.length == 0) return ReturnCode.PROC_NO_PARTITION;
 
-        memoryManager.loadProgram(program, allocation);
+        memoryManager.loadProgram(program, allocation, pcbId); // <- proccess ID
 
         PCB newPCB = new PCB();
         newPCB.pages = allocation;
@@ -75,7 +75,7 @@ public class ProcessManager {
 
     public void setNoop(){
         int[] allocation = memoryManager.allocate(1);
-        memoryManager.loadProgram(new Word[] { new Word(Opcode.NOOP, -1, -1, -1) }, allocation);
+        memoryManager.loadProgram(new Word[] { new Word(Opcode.NOOP, -1, -1, -1) }, allocation, pcbId); // <- proccess ID
 
         PCB newPCB = new PCB();
         newPCB.pages = allocation;
@@ -105,15 +105,12 @@ public class ProcessManager {
         while (!allocatedList.isEmpty()) {
             cpu.scheduler.readyList.add(allocatedList.poll());
         }
-        
     }
 
     public void execute(int processId) {
         if(allocatedList.remove(processId)){
-
             cpu.scheduler.readyList.add(processId);
-
-        }  
+        }
     }
 
     public ReturnCode dump(int processId) {
@@ -128,7 +125,7 @@ public class ProcessManager {
             int base = page * VM.PAGE_SIZE;
             int limit = base + VM.PAGE_SIZE;
 
-            memoryManager.dump(base, limit);  
+            memoryManager.dump(base, limit);
 
         }
 
@@ -157,5 +154,23 @@ public class ProcessManager {
 
         pcb.programCounter = programCounter;
         pcb.registers = reg;
+    }
+    public void blockProcess(int processId) {
+        PCB pcb = pcbList.get(processId);
+        if (pcb != null && runningPCB == processId) {
+            saveContext(processId, cpu.getProgramCounter(), cpu.getRegisters());
+            runningPCB = 0;
+            cpu.scheduler.blockedList.add(processId);
+            cpu.scheduler.schedulerSemaphore.release(); // Força reschedule
+        }
+    }
+
+    public void unblockProcess(int processId) {
+        PCB pcb = pcbList.get(processId);
+        if (pcb != null) {
+            cpu.scheduler.blockedList.remove(processId);
+            cpu.scheduler.readyList.add(processId);
+            cpu.scheduler.schedulerSemaphore.release(); // Notifica scheduler
+        }
     }
 }

@@ -106,7 +106,7 @@ public class OS {
 
 			PCB pcb = processManager.pcbList.get(processId);
 
-			int position = memoryManager.translate(memoryAddress, pcb.pages);
+			int position = memoryManager.translate(memoryAddress, pcb.pages, processId);
 
 			memoryManager.memory.m[position].p = inputValue;
 
@@ -116,7 +116,7 @@ public class OS {
 
 			PCB pcb = processManager.pcbList.get(processId);
 
-			int position = memoryManager.translate(memoryAddress, pcb.pages);
+			int position = memoryManager.translate(memoryAddress, pcb.pages, processId);
 
 			System.out.println("[IO-" + processId + "] " + memoryManager.memory.m[position].p);
 

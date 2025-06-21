@@ -9,7 +9,7 @@ import Software.OS;
 
 public class VM {
 
-    public static final int MEMORY_SIZE = 1024;
+    public static final int MEMORY_SIZE = 64;
     public static final int CLOCK_ITERATION = 5;
     public static final int PAGE_SIZE = 16;
     public static final Programs progs = new Programs();

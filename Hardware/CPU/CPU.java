@@ -28,11 +28,12 @@ public class CPU extends Thread {
             this.blockedList = new LinkedList<>();
         }
 
-        @Override
-        public void run() {
+//        @Override
+        public void run(int processId) {
+            int timer = 0;
             while (true) {
                 try {
-
+                    ir = memory.m[memoryManager.translate(pc, pages, processId)];
                     schedulerSemaphore.acquire();
 
                     if (readyList.peek() != null) {
@@ -46,7 +47,7 @@ public class CPU extends Thread {
                     }
 
                 } catch (InterruptedException e) {
-                    e.printStackTrace();
+                    return;
                 }
             }
         }
@@ -291,7 +292,7 @@ public class CPU extends Thread {
 
         while (true) {
 
-            ir = memory.m[memoryManager.translate(pc, pages)];
+            ir = memory.m[memoryManager.translate(pc, pages, processId)];
             if (debug && processId != 1) {
                 System.out.print("[TRACE] ID: " + processId + " | PC: " + pc + " | EXEC: ");
                 memoryManager.dump(ir);
@@ -303,32 +304,32 @@ public class CPU extends Thread {
                     break;
 
                 case LDD:
-                    if (legal(memoryManager.translate(ir.p, pages))) {
-                        reg[ir.r1] = memory.m[memoryManager.translate(ir.p, pages)].p;
+                    if (legal(memoryManager.translate(ir.p, pages, processId))) {
+                        reg[ir.r1] = memory.m[memoryManager.translate(ir.p, pages, processId)].p;
                         pc++;
                     }
                     break;
 
                 case LDX:
-                    if (legal(memoryManager.translate(reg[ir.r2], pages))) {
-                        reg[ir.r1] = memory.m[memoryManager.translate(reg[ir.r2], pages)].p;
+                    if (legal(memoryManager.translate(reg[ir.r2], pages, processId))) {
+                        reg[ir.r1] = memory.m[memoryManager.translate(reg[ir.r2], pages, processId)].p;
                         pc++;
                     }
                     break;
 
                 case STD:
-                    if (legal(memoryManager.translate(ir.p, pages))) {
-                        memory.m[memoryManager.translate(ir.p, pages)].opc = Opcode.DATA;
-                        memory.m[memoryManager.translate(ir.p, pages)].p = reg[ir.r1];
+                    if (legal(memoryManager.translate(ir.p, pages, processId))) {
+                        memory.m[memoryManager.translate(ir.p, pages, processId)].opc = Opcode.DATA;
+                        memory.m[memoryManager.translate(ir.p, pages, processId)].p = reg[ir.r1];
                         pc++;
                     }
                     ;
                     break;
 
                 case STX:
-                    if (legal(memoryManager.translate(reg[ir.r1], pages))) {
-                        memory.m[memoryManager.translate(reg[ir.r1], pages)].opc = Opcode.DATA;
-                        memory.m[memoryManager.translate(reg[ir.r1], pages)].p = reg[ir.r2];
+                    if (legal(memoryManager.translate(reg[ir.r1], pages, processId))) {
+                        memory.m[memoryManager.translate(reg[ir.r1], pages, processId)].opc = Opcode.DATA;
+                        memory.m[memoryManager.translate(reg[ir.r1], pages, processId)].p = reg[ir.r2];
                         pc++;
                     }
                     ;
@@ -422,12 +423,12 @@ public class CPU extends Thread {
                     break;
 
                 case JMPIM:
-                    pc = memory.m[memoryManager.translate(ir.p, pages)].p;
+                    pc = memory.m[memoryManager.translate(ir.p, pages, processId)].p;
                     break;
 
                 case JMPIGM:
                     if (reg[ir.r2] > 0) {
-                        pc = memory.m[memoryManager.translate(ir.p, pages)].p;
+                        pc = memory.m[memoryManager.translate(ir.p, pages, processId)].p;
                     } else {
                         pc++;
                     }
@@ -435,7 +436,7 @@ public class CPU extends Thread {
 
                 case JMPILM:
                     if (reg[ir.r2] < 0) {
-                        pc = memory.m[memoryManager.translate(ir.p, pages)].p;
+                        pc = memory.m[memoryManager.translate(ir.p, pages, processId)].p;
                     } else {
                         pc++;
                     }
@@ -443,7 +444,7 @@ public class CPU extends Thread {
 
                 case JMPIEM:
                     if (reg[ir.r2] == 0) {
-                        pc = memory.m[memoryManager.translate(ir.p, pages)].p;
+                        pc = memory.m[memoryManager.translate(ir.p, pages, processId)].p;
                     } else {
                         pc++;
                     }
