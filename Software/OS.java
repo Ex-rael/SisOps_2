@@ -286,19 +286,14 @@ public class OS {
 								System.out.println("[SYS] Comando inválido");
 								break;
 						}
-
 						System.out.println("[SYS] Informe um comando:");
-
 					}
-
 				}
 
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
-
 		}
-
 	}
 
 	public class Console extends Thread {

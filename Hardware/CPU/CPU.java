@@ -252,9 +252,11 @@ public class CPU extends Thread {
                     consoleSemaphore.release();
                     break;
                 case IO_RETURN:
+                    processManager.saveContext(processId, pc, reg);
                     int unblockedId = unblock.poll();
-                    processManager.cpu.scheduler.blockedList.remove(unblockedId);
-                    processManager.cpu.scheduler.readyList.add(unblockedId);
+                    scheduler.blockedList.remove(unblockedId);
+                    scheduler.readyList.add(unblockedId);
+                    scheduler.readyList.add(processId);
                     break;
                 case SHMALLOC:
                     os.routines.shmalloc(processId, reg[9]);

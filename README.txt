@@ -76,5 +76,5 @@ TESTE 6/7 -> Chamadas de Sistema (INPUT,OUTPUT)
 [TESTE 7] → O sistema operacional gera uma interrupção do tipo IO_REQUEST, bloqueando o processo "fatorialTRAP" enquanto aguarda a saída ser concluída.
 [TESTE 7] → Enquanto isso, outros processos continuam executando normalmente (exemplo: ID 4 executa instruções ADD).
 [TESTE 7] → Após a operação de I/O ser concluída, aparece no terminal a saída: [IO-3] 5040 — que é o valor do fatorial calculado (7! = 5040).
-[TESTE 7] → O sistema gera a interrupção IO_RETURN desbloqueando o processo "fatorialTRAP", que retoma sua execução.
-
+[TESTE 7] → O sistema gera a interrupção IO_RETURN bloqueando o processo que estava executando e desbloqueando o processo "fatorialTRAP", que retoma sua execução.
+[TESTE 7] → volta a rodar o processo 4 que havia sido interrompido.
