@@ -14,6 +14,8 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.Map;
 import java.util.Queue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 
 import Hardware.Disk.Disk;
 import Hardware.MainMemory.Memory;
@@ -34,6 +36,10 @@ public class MemoryManager {
     private Map<Integer, Integer> diskToPageMap; // DiskPage -> ProcessId+Page
 
     private Queue<PageFaultRequest> pageFaultQueue;
+
+    private Semaphore diskSemaphore = new Semaphore(1);
+    private Map<Integer, Semaphore> pageLocks = new ConcurrentHashMap<>();
+    private Map<Integer, ProcessPageMap> processMaps = new ConcurrentHashMap<>();
 
     public MemoryManager(Memory memory) {
         this.memory = memory;
@@ -153,19 +159,32 @@ public class MemoryManager {
     }
 
     private void handlePageFault(int processId, int page, int[] pageTable) {
-        // Verifica se a página está no disco
-        int diskPage = pageToDiskMap.getOrDefault(processId * 1000 + page, -1);
+        pageLocks.putIfAbsent(processId * 1000 + page, new Semaphore(1));
 
-        if (diskPage != -1) {
-            // Página já foi carregada antes e está no disco
-            pageFaultQueue.add(new PageFaultRequest(processId, page, pageTable, true));
-        } else {
-            // Página nunca foi carregada - precisa carregar do programa original
-            pageFaultQueue.add(new PageFaultRequest(processId, page, pageTable, false));
+        try{
+            try {
+                pageLocks.get(processId * 1000 + page).acquire();
+                diskSemaphore.acquire();
+
+                // Verifica se a página está no disco
+                int diskPage = pageToDiskMap.getOrDefault(processId * 1000 + page, -1);
+
+                if (diskPage != -1) {
+                    // Página já foi carregada antes e está no disco
+                    pageFaultQueue.add(new PageFaultRequest(processId, page, pageTable, true));
+                } else {
+                    // Página nunca foi carregada - precisa carregar do programa original
+                    pageFaultQueue.add(new PageFaultRequest(processId, page, pageTable, false));
+                }
+
+                // Bloqueia o processo
+                processManager.blockProcess(processId);
+            } catch (InterruptedException e){
+                // void
+            }
+        } finally {
+            diskSemaphore.release();
         }
-
-        // Bloqueia o processo
-        processManager.blockProcess(processId);
     }
 
     public void resolvePageFaults() {
@@ -227,28 +246,25 @@ public class MemoryManager {
         processManager.unblockProcess(request.processId);
     }
     private int victimizePage() {
-        // Implementação simples: FIFO
-        // Poderia ser melhorado com LRU ou outro algoritmo
+        int lruFrame = -1;
+        long oldestAccess = Long.MAX_VALUE;
+
         for (int i = 0; i < memory.frames.length; i++) {
-            if (!memory.frames[i] && memory.m[i * VM.PAGE_SIZE].valid) {
-                // Salva a página no disco antes de liberar
-                int diskPage = disk.allocatePage();
-                Word[] pageData = new Word[VM.PAGE_SIZE];
-                System.arraycopy(memory.m, i * VM.PAGE_SIZE, pageData, 0, VM.PAGE_SIZE);
-                disk.savePage(diskPage, pageData);
-
-                // Atualiza mapeamentos
-                int processId = findProcessOwningFrame(i);
-                int page = findPageForFrame(processId, i);
-                pageToDiskMap.put(processId * 1000 + page, diskPage);
-                diskToPageMap.put(diskPage, processId * 1000 + page);
-
-                // Libera o frame
-                memory.m[i * VM.PAGE_SIZE].valid = false;
-                return i;
+            if (!memory.frames[i] && memory.isPageValid(i)) {
+                Word firstWord = memory.m[i * VM.PAGE_SIZE];
+                if (firstWord.lastAccessTime < oldestAccess) {
+                    oldestAccess = firstWord.lastAccessTime;
+                    lruFrame = i;
+                }
             }
         }
-        return -1; // Não deveria acontecer se chamado corretamente
+
+        if (lruFrame != -1) {
+            // Dispara interrupção de SWAP_OUT
+            cpu.irpt.add(Interrupts.SWAP_OUT);
+            return lruFrame;
+        }
+        return -1;
     }
 
     private void loadPageToFrame(Word[] pageData, int frame) {
@@ -301,6 +317,25 @@ public class MemoryManager {
         return -1; // Página não encontrada
     }
 
+    public void handleMemoryInterrupt(CPU.Interrupts interrupt, int processId, int page) {
+        switch(interrupt) {
+            case PAGE_SAVED:
+                // Libera quadro após salvamento
+                completePageSave(processId, page);
+                break;
+            case PAGE_LOADED:
+                // Atualiza TLB após carga
+                updatePageTable(processId, page);
+                break;
+        }
+    }
+
+    public void completePageLoad(int processId, int page) {
+        try {
+            pageLocks.get(processId * 1000 + page).release();
+        } catch (Exception e) {}
+    }
+
     class PageFaultRequest {
         int processId;
         int page;
@@ -318,5 +353,81 @@ public class MemoryManager {
 
     class PageFaultException extends RuntimeException {
         // Exceção para interromper a execução quando ocorre page fault
+    }
+
+    class ProcessPageMap {
+        int processId;
+        Map<Integer, PageEntry> pageMap = new ConcurrentHashMap<>();
+
+        class PageEntry {
+            int frame = -1;
+            int diskLocation = -1;
+            boolean inMemory = false;
+            boolean onDisk = false;
+        }
+
+        public void updatePageMapping(int processId, int page, int frame, int diskPage) {
+            ProcessPageMap map = processMaps.computeIfAbsent(processId, k -> new ProcessPageMap());
+            PageEntry entry = map.pageMap.computeIfAbsent(page, k -> new PageEntry());
+
+            entry.frame = frame;
+            entry.diskLocation = diskPage;
+            entry.inMemory = (frame != -1);
+            entry.onDisk = (diskPage != -1);
+        }
+
+        private void savePageToDisk(int frame) {
+            if (!memory.isPageModified(frame)) {
+                return; // Skip save if not modified
+            }
+
+            Word[] pageData = new Word[VM.PAGE_SIZE];
+            System.arraycopy(memory.m, frame * VM.PAGE_SIZE, pageData, 0, VM.PAGE_SIZE);
+
+            int diskPage = disk.allocatePage();
+            disk.savePage(diskPage, pageData);
+
+            // Atualiza flags
+            memory.m[frame * VM.PAGE_SIZE].modified = false;
+        }
+
+        public void resolvePageFault(PageFaultRequest request) {
+            // 1. Escolhe vítima se necessário
+            int freeFrame = getFreeFrameOrVictim();
+
+            // 2. Inicia operação de I/O
+            if (request.fromDisk) {
+                startDiskRead(request.processId, request.page, freeFrame);
+            } else {
+                startProgramLoad(request.processId, request.page, freeFrame);
+            }
+
+            // 3. Bloqueia processo
+            processManager.blockProcess(request.processId);
+        }
+
+        public void onDiskOperationComplete(int processId, int page) {
+            // Atualiza estruturas
+            updatePageMapping(processId, page);
+
+            // Dispara interrupção
+            cpu.irpt.add(Interrupts.PAGE_LOADED);
+            processManager.unblockProcess(processId);
+        }
+
+        public void printMemoryStatus() {
+            System.out.println("\n[Memory Status]");
+            System.out.println("Frames livres: " + countFreeFrames());
+            System.out.println("Páginas no disco: " + pageToDiskMap.size());
+
+            processMaps.forEach((pid, map) -> {
+                System.out.println("\nProcesso " + pid + ":");
+                map.pageMap.forEach((page, entry) -> {
+                    String status = entry.inMemory ? "RAM (frame " + entry.frame + ")" :
+                            entry.onDisk ? "DISK (sector " + entry.diskLocation + ")" : "NOT LOADED";
+                    System.out.println("  Página " + page + ": " + status);
+                });
+            });
+        }
     }
 }

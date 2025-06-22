@@ -65,8 +65,22 @@ public class CPU extends Thread {
     }
 
     public enum Interrupts {
-        OUT_OF_MEMORY, INVALID_VALUE, INVALID_ADDRESS, INVALID_INSTRUCTION, OVERFLOW, STOP, TIMEOUT, IO_REQUEST,
-        IO_RETURN, SHMALLOC, SHMREF;
+        OUT_OF_MEMORY,
+        INVALID_VALUE,
+        INVALID_ADDRESS,
+        INVALID_INSTRUCTION,
+        OVERFLOW,
+        STOP,
+        TIMEOUT,
+        IO_REQUEST,
+        IO_RETURN,
+        SHMALLOC,
+        SHMREF,
+        PAGE_FAULT,
+        PAGE_SAVED,
+        PAGE_LOADED,
+        SWAP_OUT,
+        SWAP_IN
     }
 
     public enum Opcode {

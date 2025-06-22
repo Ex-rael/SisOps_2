@@ -12,6 +12,7 @@ public class Memory {
         public boolean valid = false;  // Indica se a palavra é válida (página residente)
         public boolean modified = false; // Flag de modificação (para write-back)
         public int referenceCounter = 0; // Contador de referências (para algoritmos de substituição)
+        public long lastAccessTime;
 
         public Word(Opcode _opc, int _r1, int _r2, int _p) {
             opc = _opc;
@@ -91,5 +92,16 @@ public class Memory {
             pageTable[page] = frame;
             validatePage(frame);
         }
+    }
+
+    public void markPageModified(int frame) {
+        int start = frame * pageSize;
+        for (int i = start; i < start + pageSize; i++) {
+            m[i].modified = true;
+        }
+    }
+
+    public boolean isPageModified(int frame) {
+        return m[frame * pageSize].modified;
     }
 }
